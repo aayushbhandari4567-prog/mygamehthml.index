@@ -99,7 +99,6 @@ window.onerror = (m, s, l) => { const e = document.getElementById('err'); e.styl
 if (typeof THREE === 'undefined') throw new Error('Three.js failed to load. Check your internet connection.');
 
 /* ================= CONFIG ================= */
-// Paste your Firebase web config here to enable login + cloud save. Leave apiKey empty for offline mode.
 const firebaseConfig = { apiKey: "", authDomain: "", projectId: "", appId: "" };
 
 const CHARACTERS = [
@@ -419,4 +418,7 @@ const hex = c => '#' + c.toString(16).padStart(6,'0');
 function renderStore(){
   $('storeCoins').textContent = save.coins;
   $('chars').innerHTML = CHARACTERS.map(c => {
-    const owned = save.owned.includes(c.id), sel = save.selected 
+    const owned = save.owned.includes(c.id), sel = save.selected === c.id;
+    let btn = '';
+    if (sel) btn = '<button class="small" disabled>Selected</button>';
+    els
