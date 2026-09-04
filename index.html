@@ -6,16 +6,16 @@
 <title>Rail Rush - Endless Runner</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',Arial,sans-serif; background:#000; overflow:hidden; color:#fff; touch-action:none; }
+  body { font-family:'Segoe UI',Arial,sans-serif; background:#1b1b3a; overflow:hidden; color:#fff; touch-action:none; }
   #game { position:fixed; inset:0; display:block; }
   .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(10,10,30,.85); z-index:10; }
   .hidden { display:none !important; }
-  h1 { font-size:48px; letter-spacing:4px; color:#ffcc00; text-shadow:0 4px 0 #b36b00; margin-bottom:20px; }
+  h1 { font-size:46px; letter-spacing:4px; color:#ffcc00; text-shadow:0 4px 0 #b36b00; margin-bottom:16px; }
   h2 { font-size:28px; margin-bottom:14px; color:#ffcc00; }
   button { background:linear-gradient(#ffd54a,#ff9800); border:none; border-radius:12px; padding:14px 36px; font-size:20px; font-weight:bold; color:#3a2400; cursor:pointer; margin:8px; min-width:230px; box-shadow:0 5px 0 #b36b00; }
   button:active { transform:translateY(4px); box-shadow:0 1px 0 #b36b00; }
   button.small { min-width:auto; padding:8px 16px; font-size:15px; margin:4px; }
-  button:disabled { filter:grayscale(1); opacity:.6; cursor:default; }
+  button:disabled { filter:grayscale(1); opacity:.6; }
   #hud { position:fixed; top:16px; left:16px; right:16px; display:flex; justify-content:space-between; font-size:26px; font-weight:bold; text-shadow:0 2px 4px #000; z-index:5; pointer-events:none; }
   .panel { background:#1b1b3a; padding:24px; border-radius:16px; max-width:640px; width:92%; max-height:85vh; overflow:auto; text-align:center; }
   .chars { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:14px; margin:12px 0; }
@@ -26,15 +26,16 @@
   input { padding:12px; font-size:16px; border-radius:8px; border:none; width:100%; margin:6px 0; }
   .muted { color:#aaa; font-size:14px; margin:8px 0; }
   .stat { font-size:22px; margin:6px; }
+  #status { color:#8f8; font-size:14px; margin-top:10px; }
   #tip { position:fixed; bottom:18px; width:100%; text-align:center; color:#ddd; z-index:5; pointer-events:none; text-shadow:0 1px 3px #000; }
-  #err { position:fixed; inset:0; z-index:99; background:#300; color:#fff; padding:20px; display:none; white-space:pre-wrap; }
+  #err { position:fixed; left:0; right:0; bottom:0; z-index:99; background:#a00; color:#fff; padding:12px; display:none; white-space:pre-wrap; font-size:13px; max-height:40vh; overflow:auto; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="err"></div>
 <div id="hud" class="hidden"><span id="hudScore">0</span><span id="hudCoins">🪙 0</span></div>
-<div id="tip" class="hidden">Swipe ← → to move · Swipe ↑ jump · Swipe ↓ roll</div>
+<div id="tip" class="hidden">Swipe ← → move · Swipe ↑ jump · Swipe ↓ roll</div>
 
 <div id="menu" class="overlay">
   <h1>RAIL RUSH</h1>
@@ -44,6 +45,7 @@
   <button id="btnStore">STORE</button>
   <button id="btnBoard">LEADERBOARD</button>
   <button id="btnLogin">LOGIN / CLOUD SAVE</button>
+  <div id="status">Loading 3D engine...</div>
 </div>
 
 <div id="over" class="overlay hidden">
@@ -90,291 +92,102 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
-window.onerror = (m, s, l) => { const e = document.getElementById('err'); e.style.display = 'block'; e.textContent = 'Error: ' + m + ' (line ' + l + ')'; };
-if (typeof THREE === 'undefined') throw new Error('Three.js failed to load. Check your internet connection.');
+// Error reporter (separate script block so it still works if the main script has a problem)
+(function(){
+  function showErr(msg){ var e = document.getElementById('err'); e.style.display = 'block'; e.textContent += msg + '\n'; }
+  window.addEventListener('error', function(ev){ showErr('Error: ' + (ev.message || ev.type) + (ev.lineno ? ' (line ' + ev.lineno + ')' : '')); });
+  window.addEventListener('unhandledrejection', function(ev){ showErr('Error: ' + ((ev.reason && ev.reason.message) || ev.reason)); });
+})();
+</script>
 
+<script>
 /* ================= CONFIG ================= */
-const firebaseConfig = { apiKey: "", authDomain: "", projectId: "", appId: "" };
+// Paste your Firebase web config here to enable login + cloud save. Leave apiKey empty for offline mode.
+var firebaseConfig = { apiKey: "", authDomain: "", projectId: "", appId: "" };
 
-const CHARACTERS = [
+var CHARACTERS = [
   { id:'jake',   name:'Jake',   cost:0,    body:0x2196f3, skin:0xffcc99, hair:0x3b2314 },
   { id:'tricky', name:'Tricky', cost:300,  body:0xe91e63, skin:0xffe0bd, hair:0xd84315 },
   { id:'fresh',  name:'Fresh',  cost:600,  body:0x4caf50, skin:0x8d5524, hair:0x111111 },
   { id:'spike',  name:'Spike',  cost:1000, body:0x9c27b0, skin:0xffcc99, hair:0x00e5ff },
-  { id:'yutani', name:'Yutani', cost:1500, body:0x607d8b, skin:0xb0bec5, hair:0x00ff88 },
+  { id:'yutani', name:'Yutani', cost:1500, body:0x607d8b, skin:0xb0bec5, hair:0x00ff88 }
 ];
-const LANE_X = [-2.2, 0, 2.2];
-const GRAVITY = 30, JUMP_V = 11, PLAYER_H = 1.9, ROLL_H = 0.95;
-const $ = id => document.getElementById(id);
+var LANE_X = [-2.2, 0, 2.2];
+var GRAVITY = 30, JUMP_V = 11, PLAYER_H = 1.9, ROLL_H = 0.95;
+function $(id){ return document.getElementById(id); }
+function setStatus(t, ok){ $('status').textContent = t; $('status').style.color = ok ? '#8f8' : '#f88'; }
 
 /* ================= SAVE DATA ================= */
-const defaultSave = () => ({ coins:0, best:0, owned:['jake'], selected:'jake', name:'Guest', board:[] });
-let save = loadLocal();
-function loadLocal(){
-  try { return Object.assign(defaultSave(), JSON.parse(localStorage.getItem('railrush') || '{}')); }
-  catch { return defaultSave(); }
-}
+function defaultSave(){ return { coins:0, best:0, owned:['jake'], selected:'jake', name:'Guest', board:[] }; }
+var save = defaultSave();
+try { Object.assign(save, JSON.parse(localStorage.getItem('railrush') || '{}')); } catch (e) {}
 function persist(){
-  localStorage.setItem('railrush', JSON.stringify(save));
-  if (Cloud.user) Cloud.saveProfile(save).catch(e => console.warn('Cloud save failed', e));
+  try { localStorage.setItem('railrush', JSON.stringify(save)); } catch (e) {}
+  if (Cloud.user) Cloud.saveProfile(save).catch(function(e){ console.warn('Cloud save failed', e); });
 }
 
-const Cloud = {
+function loadScript(src){
+  return new Promise(function(res, rej){
+    var s = document.createElement('script'); s.src = src;
+    s.onload = res; s.onerror = function(){ rej(new Error('Failed to load ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+
+/* ================= CLOUD (Firebase, loaded only if configured) ================= */
+var Cloud = {
   enabled: !!firebaseConfig.apiKey, user:null, auth:null, db:null,
-  init(onUser){
+  init: async function(onUser){
     if (!this.enabled) return;
+    var base = 'https://www.gstatic.com/firebasejs/10.12.0/';
+    await loadScript(base + 'firebase-app-compat.js');
+    await loadScript(base + 'firebase-auth-compat.js');
+    await loadScript(base + 'firebase-firestore-compat.js');
     firebase.initializeApp(firebaseConfig);
     this.auth = firebase.auth(); this.db = firebase.firestore();
-    this.auth.onAuthStateChanged(u => { this.user = u; onUser(u); });
+    var self = this;
+    this.auth.onAuthStateChanged(function(u){ self.user = u; onUser(u); });
   },
-  signIn(e,p){ return this.auth.signInWithEmailAndPassword(e,p); },
-  signUp(e,p){ return this.auth.createUserWithEmailAndPassword(e,p); },
-  signOut(){ return this.auth.signOut(); },
-  async loadProfile(){ const d = await this.db.collection('users').doc(this.user.uid).get(); return d.exists ? d.data() : null; },
-  saveProfile(data){ const { board, ...profile } = data; return this.db.collection('users').doc(this.user.uid).set(profile, { merge:true }); },
-  submitScore(name, score){ return this.db.collection('scores').add({ uid:this.user.uid, name, score, ts:Date.now() }); },
-  async topScores(){ const q = await this.db.collection('scores').orderBy('score','desc').limit(10).get(); return q.docs.map(d => d.data()); }
+  signIn: function(e,p){ return this.auth.signInWithEmailAndPassword(e,p); },
+  signUp: function(e,p){ return this.auth.createUserWithEmailAndPassword(e,p); },
+  signOut: function(){ return this.auth.signOut(); },
+  loadProfile: async function(){ var d = await this.db.collection('users').doc(this.user.uid).get(); return d.exists ? d.data() : null; },
+  saveProfile: function(data){
+    var profile = Object.assign({}, data); delete profile.board;
+    return this.db.collection('users').doc(this.user.uid).set(profile, { merge:true });
+  },
+  submitScore: function(name, score){ return this.db.collection('scores').add({ uid:this.user.uid, name:name, score:score, ts:Date.now() }); },
+  topScores: async function(){ var q = await this.db.collection('scores').orderBy('score','desc').limit(10).get(); return q.docs.map(function(d){ return d.data(); }); }
 };
 
 async function onAuthChange(user){
   if (user){
-    $('userLine').textContent = `Signed in as ${user.email} · cloud save on`;
+    $('userLine').textContent = 'Signed in as ' + user.email + ' · cloud save on';
     try {
-      const cloud = await Cloud.loadProfile();
+      var cloud = await Cloud.loadProfile();
       if (cloud){
         save.coins = Math.max(save.coins, cloud.coins || 0);
         save.best = Math.max(save.best, cloud.best || 0);
-        save.owned = [...new Set([...save.owned, ...(cloud.owned || [])])];
+        save.owned = Array.from(new Set(save.owned.concat(cloud.owned || [])));
         save.selected = cloud.selected || save.selected;
         save.name = cloud.name || save.name;
       }
       persist(); rebuildPlayer(); refreshMenu();
-    } catch(e){ console.warn(e); }
+    } catch (e) { console.warn(e); }
   } else {
     $('userLine').textContent = Cloud.enabled ? 'Not signed in (local save)' : 'Playing offline (local save)';
   }
   refreshLoginPanel();
 }
 
-/* ================= THREE.JS SCENE ================= */
-const canvas = $('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
+/* ================= GAME STATE & INPUT ================= */
+var G = { running:false, speed:12, dist:0, score:0, runCoins:0, lane:1, x:0, y:0, vy:0, rolling:0, sinceSpawn:0, nextGap:20, time:0 };
+function move(d){ G.lane = Math.max(0, Math.min(2, G.lane + d)); }
+function jump(){ if (G.y <= 0){ G.vy = JUMP_V; G.rolling = 0; } }
+function roll(){ G.rolling = 0.7; if (G.y > 0) G.vy = -20; }
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 40, 110);
-
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 300);
-camera.position.set(0, 5.5, 9);
-camera.lookAt(0, 1.5, -10);
-
-scene.add(new THREE.HemisphereLight(0xffffff, 0x446688, 0.9));
-const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-sun.position.set(10, 25, 10); sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-Object.assign(sun.shadow.camera, { left:-20, right:20, top:20, bottom:-60, near:1, far:100 });
-scene.add(sun);
-
-const mat = (color, extra={}) => new THREE.MeshStandardMaterial({ color, ...extra });
-const box = (w,h,d,color) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(color)); m.castShadow = true; return m; };
-
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 400), mat(0x6b6b6b));
-ground.rotation.x = -Math.PI/2; ground.position.z = -150; ground.receiveShadow = true; scene.add(ground);
-LANE_X.forEach(x => [-0.6, 0.6].forEach(dx => {
-  const rail = box(0.12, 0.1, 400, 0xbbbbbb); rail.position.set(x+dx, 0.05, -150); rail.castShadow = false; scene.add(rail);
-}));
-
-const sleepers = [];
-for (let i=0;i<60;i++){ const s = box(7.5, 0.08, 0.4, 0x5a3a1a); s.castShadow=false; s.position.set(0, 0.02, -i*3.4); scene.add(s); sleepers.push(s); }
-const buildings = [];
-const palette = [0xf28b82, 0xfbbc04, 0x81c995, 0xaecbfa, 0xd7aefb, 0xffb74d, 0x90caf9];
-function styleBuilding(b){
-  const h = 4 + Math.random()*16;
-  b.scale.set(1, h, 1); b.position.y = h/2;
-  b.material.color.setHex(palette[Math.floor(Math.random()*palette.length)]);
-}
-for (let i=0;i<44;i++){
-  const b = box(6, 1, 6, 0xffffff); b.castShadow=false;
-  b.position.set((i%2?1:-1)*(9+Math.random()*4), 0, -i*9.5);
-  styleBuilding(b); scene.add(b); buildings.push(b);
-}
-
-let player = null;
-function buildPlayer(ch){
-  const g = new THREE.Group();
-  const body = box(0.7, 0.8, 0.4, ch.body); body.position.y = 1.0;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 20), mat(ch.skin)); head.position.y = 1.65; head.castShadow=true;
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.31, 20, 20, 0, Math.PI*2, 0, Math.PI/2), mat(ch.hair)); hair.position.y = 1.68;
-  const legL = box(0.25, 0.6, 0.3, 0x222244); legL.position.set(-0.18, 0.3, 0);
-  const legR = legL.clone(); legR.position.x = 0.18;
-  const armL = box(0.18, 0.7, 0.18, ch.body); armL.position.set(-0.45, 1.0, 0);
-  const armR = armL.clone(); armR.position.x = 0.45;
-  g.add(body, head, hair, legL, legR, armL, armR);
-  g.userData = { legL, legR, armL, armR };
-  return g;
-}
-function rebuildPlayer(){
-  if (player) scene.remove(player);
-  player = buildPlayer(CHARACTERS.find(c => c.id === save.selected) || CHARACTERS[0]);
-  scene.add(player);
-}
-rebuildPlayer();
-
-/* ================= OBSTACLES & COINS ================= */
-const obstacles = [], coins = [];
-const trainColors = [0xd32f2f, 0x1976d2, 0x388e3c, 0xf57c00];
-function addObstacle(mesh, lane, z, y0, y1, depth){
-  mesh.position.x = LANE_X[lane]; mesh.position.z = z; scene.add(mesh);
-  obstacles.push({ mesh, lane, y0, y1, depth });
-}
-function makeTrain(lane, z){
-  const g = new THREE.Group();
-  const body = box(1.8, 3, 8, trainColors[Math.floor(Math.random()*4)]); body.position.y = 1.5;
-  const roof = box(1.9, 0.2, 8.2, 0x333333); roof.position.y = 3.05;
-  const front = box(1.6, 1.2, 0.1, 0xcfe8ff); front.position.set(0, 2.0, 4.0);
-  g.add(body, roof, front);
-  addObstacle(g, lane, z, 0, 3.1, 8);
-}
-function makeBarrier(lane, z){
-  const g = new THREE.Group();
-  const bar = box(1.8, 0.4, 0.3, 0xffc107); bar.position.y = 0.8;
-  const p1 = box(0.15, 1.0, 0.15, 0x333333); p1.position.set(-0.75, 0.5, 0);
-  const p2 = p1.clone(); p2.position.x = 0.75;
-  g.add(bar, p1, p2);
-  addObstacle(g, lane, z, 0, 1.0, 0.3);
-}
-function makeOverhead(lane, z){
-  const g = new THREE.Group();
-  const bar = box(1.8, 1.1, 0.3, 0xff5722); bar.position.y = 2.05;
-  const p1 = box(0.15, 2.6, 0.15, 0x333333); p1.position.set(-0.85, 1.3, 0);
-  const p2 = p1.clone(); p2.position.x = 0.85;
-  g.add(bar, p1, p2);
-  addObstacle(g, lane, z, 1.5, 2.6, 0.3);
-}
-const coinGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.08, 20);
-const coinMat = mat(0xffd700, { metalness:0.6, roughness:0.3 });
-function makeCoin(lane, z){
-  const g = new THREE.Group();
-  const c = new THREE.Mesh(coinGeo, coinMat); c.rotation.x = Math.PI/2; c.castShadow = true;
-  g.add(c); g.position.set(LANE_X[lane], 1.0, z); scene.add(g);
-  coins.push({ mesh:g, lane });
-}
-function spawnRow(){
-  const z = -100;
-  const lanes = [0,1,2].sort(() => Math.random()-0.5);
-  const n = Math.random() < 0.35 ? 2 : 1;
-  lanes.slice(0, n).forEach(l => {
-    const r = Math.random();
-    if (r < 0.4) makeTrain(l, z); else if (r < 0.7) makeBarrier(l, z); else makeOverhead(l, z);
-  });
-  const free = lanes.slice(n);
-  if (Math.random() < 0.8){
-    const cl = free[Math.floor(Math.random()*free.length)];
-    for (let i=0;i<5;i++) makeCoin(cl, z + 3 - i*1.6);
-  }
-}
-function clearTrack(){
-  obstacles.forEach(o => scene.remove(o.mesh)); coins.forEach(c => scene.remove(c.mesh));
-  obstacles.length = 0; coins.length = 0;
-}
-
-/* ================= GAME LOOP ================= */
-const G = { running:false, speed:12, dist:0, score:0, runCoins:0, lane:1, x:0, y:0, vy:0, rolling:0, sinceSpawn:0, nextGap:20, time:0 };
-
-function startGame(){
-  clearTrack();
-  Object.assign(G, { running:true, speed:12, dist:0, score:0, runCoins:0, lane:1, x:0, y:0, vy:0, rolling:0, sinceSpawn:0, nextGap:20, time:0 });
-  player.position.set(0,0,0); player.scale.y = 1; player.rotation.set(0,0,0);
-  $('menu').classList.add('hidden'); $('over').classList.add('hidden');
-  $('hud').classList.remove('hidden'); $('tip').classList.remove('hidden');
-  setTimeout(() => $('tip').classList.add('hidden'), 4000);
-}
-function moveWorld(dz){
-  for (const s of sleepers){ s.position.z += dz; if (s.position.z > 10) s.position.z -= 60*3.4; }
-  for (const b of buildings){ b.position.z += dz; if (b.position.z > 20){ b.position.z -= 44*9.5; styleBuilding(b); } }
-}
-function update(dt){
-  G.time += dt;
-  G.speed = Math.min(30, G.speed + 0.12*dt);
-  const dz = G.speed*dt;
-  G.dist += dz; G.sinceSpawn += dz;
-  moveWorld(dz);
-
-  G.vy -= GRAVITY*dt; G.y += G.vy*dt;
-  if (G.y < 0){ G.y = 0; G.vy = 0; }
-  if (G.rolling > 0) G.rolling -= dt;
-
-  G.x += (LANE_X[G.lane] - G.x) * Math.min(1, dt*12);
-  player.position.set(G.x, G.y, 0);
-  player.scale.y = G.rolling > 0 ? 0.5 : 1;
-  player.rotation.z = (LANE_X[G.lane] - G.x) * -0.15;
-
-  const { legL, legR, armL, armR } = player.userData;
-  const s = G.y > 0 ? 0.5 : Math.sin(G.time*G.speed*1.2)*0.7;
-  legL.rotation.x = s; legR.rotation.x = -s; armL.rotation.x = -s; armR.rotation.x = s;
-
-  camera.position.x += (G.x*0.5 - camera.position.x)*dt*5;
-  camera.lookAt(camera.position.x*0.5, 1.5, -10);
-
-  const pB = G.y, pT = G.y + (G.rolling > 0 ? ROLL_H : PLAYER_H);
-
-  for (let i=obstacles.length-1;i>=0;i--){
-    const o = obstacles[i]; o.mesh.position.z += dz;
-    if (o.mesh.position.z > 12){ scene.remove(o.mesh); obstacles.splice(i,1); continue; }
-    if (Math.abs(o.mesh.position.z) < o.depth/2 + 0.25 &&
-        Math.abs(G.x - LANE_X[o.lane]) < 1.1 && pT > o.y0 && pB < o.y1){ gameOver(); return; }
-  }
-  for (let i=coins.length-1;i>=0;i--){
-    const c = coins[i]; c.mesh.position.z += dz; c.mesh.rotation.y += dt*4;
-    if (c.mesh.position.z > 12){ scene.remove(c.mesh); coins.splice(i,1); continue; }
-    if (Math.abs(c.mesh.position.z) < 0.7 && Math.abs(G.x - LANE_X[c.lane]) < 0.9 && pB < 1.4 && pT > 0.6){
-      scene.remove(c.mesh); coins.splice(i,1); G.runCoins++;
-    }
-  }
-  if (G.sinceSpawn >= G.nextGap){
-    G.sinceSpawn = 0; G.nextGap = 12 + G.speed*0.5 + Math.random()*8; spawnRow();
-  }
-  G.score = Math.floor(G.dist) + G.runCoins*5;
-  $('hudScore').textContent = G.score;
-  $('hudCoins').textContent = '🪙 ' + G.runCoins;
-}
-function gameOver(){
-  G.running = false;
-  player.rotation.x = -Math.PI/2;
-  save.coins += G.runCoins;
-  if (G.score > save.best) save.best = G.score;
-  recordScore(G.score);
-  persist(); refreshMenu();
-  $('overScore').textContent = G.score; $('overBest').textContent = save.best; $('overCoins').textContent = G.runCoins;
-  $('hud').classList.add('hidden'); $('tip').classList.add('hidden'); $('over').classList.remove('hidden');
-}
-let last = performance.now();
-function loop(now){
-  requestAnimationFrame(loop);
-  const dt = Math.min((now-last)/1000, 0.05); last = now;
-  if (G.running) update(dt);
-  else if ($('over').classList.contains('hidden')) { player.rotation.y += dt*0.6; moveWorld(dt*3); }
-  renderer.render(scene, camera);
-}
-requestAnimationFrame(loop);
-addEventListener('resize', () => {
-  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-
-/* ================= INPUT ================= */
-const move = d => { G.lane = Math.max(0, Math.min(2, G.lane + d)); };
-const jump = () => { if (G.y <= 0){ G.vy = JUMP_V; G.rolling = 0; } };
-const roll = () => { G.rolling = 0.7; if (G.y > 0) G.vy = -20; };
-addEventListener('keydown', e => {
+window.addEventListener('keydown', function(e){
   if (!G.running) return;
   switch (e.code){
     case 'ArrowLeft': case 'KeyA': move(-1); break;
@@ -383,42 +196,185 @@ addEventListener('keydown', e => {
     case 'ArrowDown': case 'KeyS': roll(); break;
   }
 });
-let touchStart = null;
-canvas.addEventListener('touchstart', e => { touchStart = [e.touches[0].clientX, e.touches[0].clientY]; }, { passive:true });
-canvas.addEventListener('touchend', e => {
+var touchStart = null;
+var canvas = $('game');
+canvas.addEventListener('touchstart', function(e){ touchStart = [e.touches[0].clientX, e.touches[0].clientY]; }, { passive:true });
+canvas.addEventListener('touchend', function(e){
   if (!touchStart || !G.running) return;
-  const dx = e.changedTouches[0].clientX - touchStart[0], dy = e.changedTouches[0].clientY - touchStart[1];
+  var dx = e.changedTouches[0].clientX - touchStart[0], dy = e.changedTouches[0].clientY - touchStart[1];
   touchStart = null;
   if (Math.abs(dx) > Math.abs(dy)){ if (Math.abs(dx) > 30) move(dx > 0 ? 1 : -1); }
   else { if (dy < -30) jump(); else if (dy > 30) roll(); }
 });
 
+// These get filled in once the 3D engine is ready
+var startGame = null, rebuildPlayer = function(){}, resetPose = function(){};
+
 /* ================= LEADERBOARD ================= */
 function recordScore(score){
-  const name = save.name || 'Guest';
-  save.board.push({ name, score });
-  save.board.sort((a,b) => b.score - a.score); save.board = save.board.slice(0,10);
-  if (Cloud.user) Cloud.submitScore(name, score).catch(e => console.warn(e));
+  var name = save.name || 'Guest';
+  save.board.push({ name:name, score:score });
+  save.board.sort(function(a,b){ return b.score - a.score; }); save.board = save.board.slice(0,10);
+  if (Cloud.user) Cloud.submitScore(name, score).catch(function(e){ console.warn(e); });
 }
-const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
 async function renderBoard(){
-  let rows = save.board, src = 'Local leaderboard';
+  var rows = save.board, src = 'Local leaderboard';
   if (Cloud.user){
     try { rows = await Cloud.topScores(); src = 'Global leaderboard'; }
-    catch(e){ src = 'Global leaderboard unavailable, showing local'; }
+    catch (e) { src = 'Global leaderboard unavailable, showing local'; }
   }
   $('boardSource').textContent = src;
   $('boardBody').innerHTML = rows.length
-    ? rows.map((r,i) => `<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${r.score}</td></tr>`).join('')
+    ? rows.map(function(r,i){ return '<tr><td>' + (i+1) + '</td><td>' + escapeHtml(r.name) + '</td><td>' + r.score + '</td></tr>'; }).join('')
     : '<tr><td colspan="3">No scores yet. Go run!</td></tr>';
 }
 
 /* ================= STORE ================= */
-const hex = c => '#' + c.toString(16).padStart(6,'0');
+function hex(c){ return '#' + c.toString(16).padStart(6,'0'); }
 function renderStore(){
   $('storeCoins').textContent = save.coins;
-  $('chars').innerHTML = CHARACTERS.map(c => {
-    const owned = save.owned.includes(c.id), sel = save.selected === c.id;
-    let btn = '';
-    if (sel) btn = '<button class="small" disabled>Selected</button>';
-    els
+  $('chars').innerHTML = CHARACTERS.map(function(c){
+    var owned = save.owned.indexOf(c.id) >= 0, sel = save.selected === c.id;
+    var disabled = sel || (!owned && save.coins < c.cost);
+    return '<div class="char">' +
+      '<div class="swatch" style="background:' + hex(c.body) + ';border-color:' + hex(c.hair) + '"></div>' +
+      '<b>' + c.name + '</b>' +
+      '<div class="muted">' + (owned ? 'Owned' : '🪙 ' + c.cost) + '</div>' +
+      '<button class="small" data-id="' + c.id + '"' + (disabled ? ' disabled' : '') + '>' + (sel ? 'Selected' : owned ? 'Select' : 'Buy') + '</button>' +
+    '</div>';
+  }).join('');
+}
+$('chars').addEventListener('click', function(e){
+  var id = e.target.getAttribute('data-id'); if (!id) return;
+  var c = CHARACTERS.filter(function(x){ return x.id === id; })[0];
+  if (save.owned.indexOf(id) < 0){ if (save.coins < c.cost) return; save.coins -= c.cost; save.owned.push(id); }
+  save.selected = id; persist(); rebuildPlayer(); renderStore(); refreshMenu();
+});
+
+/* ================= UI ================= */
+function refreshMenu(){ $('menuBest').textContent = save.best; $('menuCoins').textContent = save.coins; }
+function refreshLoginPanel(){
+  $('nameInput').value = save.name || '';
+  if (!Cloud.enabled){
+    $('loginInfo').textContent = 'Cloud save is not configured. Add your Firebase config in index.html to enable login. You can still set a display name below.';
+    $('authForm').classList.add('hidden'); $('btnSignOut').classList.add('hidden'); return;
+  }
+  var u = Cloud.user;
+  $('loginInfo').textContent = u ? 'Signed in as ' + u.email : 'Sign in to sync coins, characters and scores across devices.';
+  $('authForm').classList.toggle('hidden', !!u);
+  $('btnSignOut').classList.toggle('hidden', !u);
+}
+function show(id){ refreshMenu(); $(id).classList.remove('hidden'); }
+function tryStart(){
+  if (!startGame){ setStatus('3D engine is still loading, please wait...', false); return; }
+  startGame();
+}
+$('btnPlay').onclick = tryStart;
+$('btnRetry').onclick = tryStart;
+$('btnMenu').onclick = function(){ $('over').classList.add('hidden'); resetPose(); show('menu'); };
+$('btnStore').onclick = function(){ renderStore(); show('store'); };
+$('btnBoard').onclick = function(){ renderBoard(); show('board'); };
+$('btnLogin').onclick = function(){ refreshLoginPanel(); show('login'); };
+Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function(b){
+  b.onclick = function(){ $(b.getAttribute('data-close')).classList.add('hidden'); };
+});
+$('nameInput').addEventListener('change', function(){ save.name = $('nameInput').value.trim().slice(0,16) || 'Guest'; persist(); });
+function authMsg(m){ $('authMsg').textContent = m; }
+$('btnSignIn').onclick = async function(){ try { await Cloud.signIn($('email').value, $('password').value); authMsg('Signed in.'); } catch (e) { authMsg(e.message); } };
+$('btnSignUp').onclick = async function(){ try { await Cloud.signUp($('email').value, $('password').value); authMsg('Account created and signed in.'); } catch (e) { authMsg(e.message); } };
+$('btnSignOut').onclick = async function(){ await Cloud.signOut(); authMsg('Signed out.'); };
+refreshMenu(); refreshLoginPanel();
+Cloud.init(onAuthChange).catch(function(e){ $('userLine').textContent = 'Cloud unavailable: ' + e.message; });
+
+/* ================= 3D ENGINE ================= */
+function initEngine(){
+  var renderer = new THREE.WebGLRenderer({ canvas:canvas, antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.Fog(0x87ceeb, 40, 110);
+  var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 300);
+  camera.position.set(0, 5.5, 9); camera.lookAt(0, 1.5, -10);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x446688, 0.9));
+  var sun = new THREE.DirectionalLight(0xffffff, 1.1);
+  sun.position.set(10, 25, 10); sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left:-20, right:20, top:20, bottom:-60, near:1, far:100 });
+  scene.add(sun);
+
+  function mat(color, extra){ return new THREE.MeshStandardMaterial(Object.assign({ color:color }, extra || {})); }
+  function box(w,h,d,color){ var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(color)); m.castShadow = true; return m; }
+
+  var ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 400), mat(0x6b6b6b));
+  ground.rotation.x = -Math.PI/2; ground.position.z = -150; ground.receiveShadow = true; scene.add(ground);
+  LANE_X.forEach(function(x){ [-0.6, 0.6].forEach(function(dx){
+    var rail = box(0.12, 0.1, 400, 0xbbbbbb); rail.position.set(x+dx, 0.05, -150); rail.castShadow = false; scene.add(rail);
+  }); });
+
+  var sleepers = [];
+  for (var i=0;i<60;i++){ var s = box(7.5, 0.08, 0.4, 0x5a3a1a); s.castShadow = false; s.position.set(0, 0.02, -i*3.4); scene.add(s); sleepers.push(s); }
+  var buildings = [];
+  var palette = [0xf28b82, 0xfbbc04, 0x81c995, 0xaecbfa, 0xd7aefb, 0xffb74d, 0x90caf9];
+  function styleBuilding(b){
+    var h = 4 + Math.random()*16;
+    b.scale.set(1, h, 1); b.position.y = h/2;
+    b.material.color.setHex(palette[Math.floor(Math.random()*palette.length)]);
+  }
+  for (var j=0;j<44;j++){
+    var b = box(6, 1, 6, 0xffffff); b.castShadow = false;
+    b.position.set((j%2?1:-1)*(9+Math.random()*4), 0, -j*9.5);
+    styleBuilding(b); scene.add(b); buildings.push(b);
+  }
+
+  var player = null;
+  function buildPlayer(ch){
+    var g = new THREE.Group();
+    var body = box(0.7, 0.8, 0.4, ch.body); body.position.y = 1.0;
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 20), mat(ch.skin)); head.position.y = 1.65; head.castShadow = true;
+    var hair = new THREE.Mesh(new THREE.SphereGeometry(0.31, 20, 20, 0, Math.PI*2, 0, Math.PI/2), mat(ch.hair)); hair.position.y = 1.68;
+    var legL = box(0.25, 0.6, 0.3, 0x222244); legL.position.set(-0.18, 0.3, 0);
+    var legR = legL.clone(); legR.position.x = 0.18;
+    var armL = box(0.18, 0.7, 0.18, ch.body); armL.position.set(-0.45, 1.0, 0);
+    var armR = armL.clone(); armR.position.x = 0.45;
+    g.add(body, head, hair, legL, legR, armL, armR);
+    g.userData = { legL:legL, legR:legR, armL:armL, armR:armR };
+    return g;
+  }
+  rebuildPlayer = function(){
+    if (player) scene.remove(player);
+    var ch = CHARACTERS.filter(function(c){ return c.id === save.selected; })[0] || CHARACTERS[0];
+    player = buildPlayer(ch); scene.add(player);
+  };
+  resetPose = function(){ player.rotation.set(0,0,0); };
+  rebuildPlayer();
+
+  var obstacles = [], coins = [];
+  var trainColors = [0xd32f2f, 0x1976d2, 0x388e3c, 0xf57c00];
+  function addObstacle(mesh, lane, z, y0, y1, depth){
+    mesh.position.x = LANE_X[lane]; mesh.position.z = z; scene.add(mesh);
+    obstacles.push({ mesh:mesh, lane:lane, y0:y0, y1:y1, depth:depth });
+  }
+  function makeTrain(lane, z){
+    var g = new THREE.Group();
+    var body = box(1.8, 3, 8, trainColors[Math.floor(Math.random()*4)]); body.position.y = 1.5;
+    var roof = box(1.9, 0.2, 8.2, 0x333333); roof.position.y = 3.05;
+    var front = box(1.6, 1.2, 0.1, 0xcfe8ff); front.position.set(0, 2.0, 4.0);
+    g.add(body, roof, front); addObstacle(g, lane, z, 0, 3.1, 8);
+  }
+  function makeBarrier(lane, z){
+    var g = new THREE.Group();
+    var bar = box(1.8, 0.4, 0.3, 0xffc107); bar.position.y = 0.8;
+    var p1 = box(0.15, 1.0, 0.15, 0x333333); p1.position.set(-0.75, 0.5, 0);
+    var p2 = p1.clone(); p2.position.x = 0.75;
+    g.add(bar, p1, p2); addObstacle(g, lane, z, 0, 1.0, 0.3);
+  }
+  function makeOverhead(lane, z){
+    var g = new THREE.Group();
+    var bar = box(1.8, 1.1, 0.3, 0xff5722); bar.position.y = 2.05;
+    var p1 = box(0.15, 2.6, 0.15, 0x333333); p1.position.set(-0.85, 1.3, 0);
+    var p2 = p1.clone(); p2.
