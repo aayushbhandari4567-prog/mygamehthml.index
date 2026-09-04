@@ -10,15 +10,15 @@
   #game { position:fixed; inset:0; display:block; }
   .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(10,10,30,.85); z-index:10; }
   .hidden { display:none !important; }
-  h1 { font-size:56px; letter-spacing:4px; color:#ffcc00; text-shadow:0 4px 0 #b36b00; margin-bottom:24px; }
-  h2 { font-size:30px; margin-bottom:14px; color:#ffcc00; }
+  h1 { font-size:48px; letter-spacing:4px; color:#ffcc00; text-shadow:0 4px 0 #b36b00; margin-bottom:20px; }
+  h2 { font-size:28px; margin-bottom:14px; color:#ffcc00; }
   button { background:linear-gradient(#ffd54a,#ff9800); border:none; border-radius:12px; padding:14px 36px; font-size:20px; font-weight:bold; color:#3a2400; cursor:pointer; margin:8px; min-width:230px; box-shadow:0 5px 0 #b36b00; }
   button:active { transform:translateY(4px); box-shadow:0 1px 0 #b36b00; }
   button.small { min-width:auto; padding:8px 16px; font-size:15px; margin:4px; }
   button:disabled { filter:grayscale(1); opacity:.6; cursor:default; }
   #hud { position:fixed; top:16px; left:16px; right:16px; display:flex; justify-content:space-between; font-size:26px; font-weight:bold; text-shadow:0 2px 4px #000; z-index:5; pointer-events:none; }
   .panel { background:#1b1b3a; padding:24px; border-radius:16px; max-width:640px; width:92%; max-height:85vh; overflow:auto; text-align:center; }
-  .chars { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:14px; margin:12px 0; }
+  .chars { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:14px; margin:12px 0; }
   .char { background:#2a2a55; border-radius:12px; padding:12px; }
   .swatch { width:60px; height:60px; margin:0 auto 8px; border-radius:50%; border:4px solid #fff; }
   table { width:100%; border-collapse:collapse; margin-bottom:12px; }
@@ -27,14 +27,15 @@
   .muted { color:#aaa; font-size:14px; margin:8px 0; }
   .stat { font-size:22px; margin:6px; }
   #tip { position:fixed; bottom:18px; width:100%; text-align:center; color:#ddd; z-index:5; pointer-events:none; text-shadow:0 1px 3px #000; }
+  #err { position:fixed; inset:0; z-index:99; background:#300; color:#fff; padding:20px; display:none; white-space:pre-wrap; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="err"></div>
 <div id="hud" class="hidden"><span id="hudScore">0</span><span id="hudCoins">🪙 0</span></div>
-<div id="tip" class="hidden">← → move · ↑ / Space jump · ↓ roll · Swipe on mobile</div>
+<div id="tip" class="hidden">Swipe ← → to move · Swipe ↑ jump · Swipe ↓ roll</div>
 
-<!-- MENU -->
 <div id="menu" class="overlay">
   <h1>RAIL RUSH</h1>
   <div id="userLine" class="muted">Playing offline (local save)</div>
@@ -45,7 +46,6 @@
   <button id="btnLogin">LOGIN / CLOUD SAVE</button>
 </div>
 
-<!-- GAME OVER -->
 <div id="over" class="overlay hidden">
   <h2>GAME OVER</h2>
   <div class="stat">Score: <b id="overScore">0</b></div>
@@ -55,7 +55,6 @@
   <button id="btnMenu">MAIN MENU</button>
 </div>
 
-<!-- STORE -->
 <div id="store" class="overlay hidden">
   <div class="panel">
     <h2>STORE</h2>
@@ -65,7 +64,6 @@
   </div>
 </div>
 
-<!-- LEADERBOARD -->
 <div id="board" class="overlay hidden">
   <div class="panel">
     <h2>LEADERBOARD</h2>
@@ -75,7 +73,6 @@
   </div>
 </div>
 
-<!-- LOGIN -->
 <div id="login" class="overlay hidden">
   <div class="panel" style="max-width:420px">
     <h2>ACCOUNT</h2>
@@ -93,22 +90,17 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
-/* =========================================================
-   CONFIG
-   Paste your Firebase web config here to enable login + cloud save.
-   Leave apiKey empty to run in offline/local-save mode.
-   ========================================================= */
-const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  appId: ""
-};
+window.onerror = (m, s, l) => { const e = document.getElementById('err'); e.style.display = 'block'; e.textContent = 'Error: ' + m + ' (line ' + l + ')'; };
+if (typeof THREE === 'undefined') throw new Error('Three.js failed to load. Check your internet connection.');
+
+/* ================= CONFIG ================= */
+// Paste your Firebase web config here to enable login + cloud save. Leave apiKey empty for offline mode.
+const firebaseConfig = { apiKey: "", authDomain: "", projectId: "", appId: "" };
 
 const CHARACTERS = [
   { id:'jake',   name:'Jake',   cost:0,    body:0x2196f3, skin:0xffcc99, hair:0x3b2314 },
@@ -117,13 +109,11 @@ const CHARACTERS = [
   { id:'spike',  name:'Spike',  cost:1000, body:0x9c27b0, skin:0xffcc99, hair:0x00e5ff },
   { id:'yutani', name:'Yutani', cost:1500, body:0x607d8b, skin:0xb0bec5, hair:0x00ff88 },
 ];
-
 const LANE_X = [-2.2, 0, 2.2];
 const GRAVITY = 30, JUMP_V = 11, PLAYER_H = 1.9, ROLL_H = 0.95;
+const $ = id => document.getElementById(id);
 
-/* =========================================================
-   SAVE DATA (local + cloud)
-   ========================================================= */
+/* ================= SAVE DATA ================= */
 const defaultSave = () => ({ coins:0, best:0, owned:['jake'], selected:'jake', name:'Guest', board:[] });
 let save = loadLocal();
 function loadLocal(){
@@ -153,9 +143,8 @@ const Cloud = {
 };
 
 async function onAuthChange(user){
-  const line = document.getElementById('userLine');
   if (user){
-    line.textContent = `Signed in as ${user.email} · cloud save on`;
+    $('userLine').textContent = `Signed in as ${user.email} · cloud save on`;
     try {
       const cloud = await Cloud.loadProfile();
       if (cloud){
@@ -168,15 +157,13 @@ async function onAuthChange(user){
       persist(); rebuildPlayer(); refreshMenu();
     } catch(e){ console.warn(e); }
   } else {
-    line.textContent = Cloud.enabled ? 'Not signed in (local save)' : 'Playing offline (local save)';
+    $('userLine').textContent = Cloud.enabled ? 'Not signed in (local save)' : 'Playing offline (local save)';
   }
   refreshLoginPanel();
 }
 
-/* =========================================================
-   THREE.JS SCENE
-   ========================================================= */
-const canvas = document.getElementById('game');
+/* ================= THREE.JS SCENE ================= */
+const canvas = $('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -193,21 +180,19 @@ camera.lookAt(0, 1.5, -10);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x446688, 0.9));
 const sun = new THREE.DirectionalLight(0xffffff, 1.1);
 sun.position.set(10, 25, 10); sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
 Object.assign(sun.shadow.camera, { left:-20, right:20, top:20, bottom:-60, near:1, far:100 });
 scene.add(sun);
 
 const mat = (color, extra={}) => new THREE.MeshStandardMaterial({ color, ...extra });
 const box = (w,h,d,color) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(color)); m.castShadow = true; return m; };
 
-// Ground and rails
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 400), mat(0x6b6b6b));
 ground.rotation.x = -Math.PI/2; ground.position.z = -150; ground.receiveShadow = true; scene.add(ground);
 LANE_X.forEach(x => [-0.6, 0.6].forEach(dx => {
   const rail = box(0.12, 0.1, 400, 0xbbbbbb); rail.position.set(x+dx, 0.05, -150); rail.castShadow = false; scene.add(rail);
 }));
 
-// Scrolling sleepers and buildings
 const sleepers = [];
 for (let i=0;i<60;i++){ const s = box(7.5, 0.08, 0.4, 0x5a3a1a); s.castShadow=false; s.position.set(0, 0.02, -i*3.4); scene.add(s); sleepers.push(s); }
 const buildings = [];
@@ -223,7 +208,6 @@ for (let i=0;i<44;i++){
   styleBuilding(b); scene.add(b); buildings.push(b);
 }
 
-// Player
 let player = null;
 function buildPlayer(ch){
   const g = new THREE.Group();
@@ -245,12 +229,9 @@ function rebuildPlayer(){
 }
 rebuildPlayer();
 
-/* =========================================================
-   OBSTACLES & COINS
-   ========================================================= */
+/* ================= OBSTACLES & COINS ================= */
 const obstacles = [], coins = [];
 const trainColors = [0xd32f2f, 0x1976d2, 0x388e3c, 0xf57c00];
-
 function addObstacle(mesh, lane, z, y0, y1, depth){
   mesh.position.x = LANE_X[lane]; mesh.position.z = z; scene.add(mesh);
   obstacles.push({ mesh, lane, y0, y1, depth });
@@ -306,11 +287,8 @@ function clearTrack(){
   obstacles.length = 0; coins.length = 0;
 }
 
-/* =========================================================
-   GAME STATE & LOOP
-   ========================================================= */
+/* ================= GAME LOOP ================= */
 const G = { running:false, speed:12, dist:0, score:0, runCoins:0, lane:1, x:0, y:0, vy:0, rolling:0, sinceSpawn:0, nextGap:20, time:0 };
-const $ = id => document.getElementById(id);
 
 function startGame(){
   clearTrack();
@@ -320,12 +298,10 @@ function startGame(){
   $('hud').classList.remove('hidden'); $('tip').classList.remove('hidden');
   setTimeout(() => $('tip').classList.add('hidden'), 4000);
 }
-
 function moveWorld(dz){
   for (const s of sleepers){ s.position.z += dz; if (s.position.z > 10) s.position.z -= 60*3.4; }
   for (const b of buildings){ b.position.z += dz; if (b.position.z > 20){ b.position.z -= 44*9.5; styleBuilding(b); } }
 }
-
 function update(dt){
   G.time += dt;
   G.speed = Math.min(30, G.speed + 0.12*dt);
@@ -333,18 +309,15 @@ function update(dt){
   G.dist += dz; G.sinceSpawn += dz;
   moveWorld(dz);
 
-  // Vertical physics
   G.vy -= GRAVITY*dt; G.y += G.vy*dt;
   if (G.y < 0){ G.y = 0; G.vy = 0; }
   if (G.rolling > 0) G.rolling -= dt;
 
-  // Lane movement (smooth)
   G.x += (LANE_X[G.lane] - G.x) * Math.min(1, dt*12);
   player.position.set(G.x, G.y, 0);
   player.scale.y = G.rolling > 0 ? 0.5 : 1;
   player.rotation.z = (LANE_X[G.lane] - G.x) * -0.15;
 
-  // Run animation
   const { legL, legR, armL, armR } = player.userData;
   const s = G.y > 0 ? 0.5 : Math.sin(G.time*G.speed*1.2)*0.7;
   legL.rotation.x = s; legR.rotation.x = -s; armL.rotation.x = -s; armR.rotation.x = s;
@@ -352,17 +325,14 @@ function update(dt){
   camera.position.x += (G.x*0.5 - camera.position.x)*dt*5;
   camera.lookAt(camera.position.x*0.5, 1.5, -10);
 
-  // Player hitbox
   const pB = G.y, pT = G.y + (G.rolling > 0 ? ROLL_H : PLAYER_H);
 
-  // Obstacles
   for (let i=obstacles.length-1;i>=0;i--){
     const o = obstacles[i]; o.mesh.position.z += dz;
     if (o.mesh.position.z > 12){ scene.remove(o.mesh); obstacles.splice(i,1); continue; }
     if (Math.abs(o.mesh.position.z) < o.depth/2 + 0.25 &&
         Math.abs(G.x - LANE_X[o.lane]) < 1.1 && pT > o.y0 && pB < o.y1){ gameOver(); return; }
   }
-  // Coins
   for (let i=coins.length-1;i>=0;i--){
     const c = coins[i]; c.mesh.position.z += dz; c.mesh.rotation.y += dt*4;
     if (c.mesh.position.z > 12){ scene.remove(c.mesh); coins.splice(i,1); continue; }
@@ -370,16 +340,13 @@ function update(dt){
       scene.remove(c.mesh); coins.splice(i,1); G.runCoins++;
     }
   }
-
   if (G.sinceSpawn >= G.nextGap){
     G.sinceSpawn = 0; G.nextGap = 12 + G.speed*0.5 + Math.random()*8; spawnRow();
   }
-
   G.score = Math.floor(G.dist) + G.runCoins*5;
   $('hudScore').textContent = G.score;
   $('hudCoins').textContent = '🪙 ' + G.runCoins;
 }
-
 function gameOver(){
   G.running = false;
   player.rotation.x = -Math.PI/2;
@@ -390,25 +357,21 @@ function gameOver(){
   $('overScore').textContent = G.score; $('overBest').textContent = save.best; $('overCoins').textContent = G.runCoins;
   $('hud').classList.add('hidden'); $('tip').classList.add('hidden'); $('over').classList.remove('hidden');
 }
-
 let last = performance.now();
 function loop(now){
   requestAnimationFrame(loop);
   const dt = Math.min((now-last)/1000, 0.05); last = now;
   if (G.running) update(dt);
-  else if (!$('over').classList.contains('hidden') === false){ player.rotation.y += dt*0.6; moveWorld(dt*3); }
+  else if ($('over').classList.contains('hidden')) { player.rotation.y += dt*0.6; moveWorld(dt*3); }
   renderer.render(scene, camera);
 }
 requestAnimationFrame(loop);
-
 addEventListener('resize', () => {
   camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 
-/* =========================================================
-   INPUT
-   ========================================================= */
+/* ================= INPUT ================= */
 const move = d => { G.lane = Math.max(0, Math.min(2, G.lane + d)); };
 const jump = () => { if (G.y <= 0){ G.vy = JUMP_V; G.rolling = 0; } };
 const roll = () => { G.rolling = 0.7; if (G.y > 0) G.vy = -20; };
@@ -431,15 +394,14 @@ canvas.addEventListener('touchend', e => {
   else { if (dy < -30) jump(); else if (dy > 30) roll(); }
 });
 
-/* =========================================================
-   LEADERBOARD
-   ========================================================= */
+/* ================= LEADERBOARD ================= */
 function recordScore(score){
   const name = save.name || 'Guest';
   save.board.push({ name, score });
   save.board.sort((a,b) => b.score - a.score); save.board = save.board.slice(0,10);
   if (Cloud.user) Cloud.submitScore(name, score).catch(e => console.warn(e));
 }
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function renderBoard(){
   let rows = save.board, src = 'Local leaderboard';
   if (Cloud.user){
@@ -448,4 +410,13 @@ async function renderBoard(){
   }
   $('boardSource').textContent = src;
   $('boardBody').innerHTML = rows.length
-    
+    ? rows.map((r,i) => `<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${r.score}</td></tr>`).join('')
+    : '<tr><td colspan="3">No scores yet. Go run!</td></tr>';
+}
+
+/* ================= STORE ================= */
+const hex = c => '#' + c.toString(16).padStart(6,'0');
+function renderStore(){
+  $('storeCoins').textContent = save.coins;
+  $('chars').innerHTML = CHARACTERS.map(c => {
+    const owned = save.owned.includes(c.id), sel = save.selected 
